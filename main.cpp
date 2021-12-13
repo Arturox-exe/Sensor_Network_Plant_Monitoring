@@ -15,6 +15,9 @@
  * limitations under the License.
  */
 #include <stdio.h>
+#include <string.h>
+
+#include "mbed.h"
 
 #include "lorawan/LoRaWANInterface.h"
 #include "lorawan/system/lorawan_data_structures.h"
@@ -92,8 +95,21 @@ static uint8_t APP_KEY[] = { 0xf3,0x1c,0x2e,0x8b,0xc6,0x71,0x28,0x1d,0x51,0x16,0
 /**
  * Entry point for application
  */
+
+char off[4] = "OFF";
+char red[4] = "Red";
+char green[6] = "Green";
+
+DigitalOut Red(PH_0);
+DigitalOut Green(PH_1);
+
+
+
+
 int main(void)
 {
+		Red = 0;
+		Green = 0;
     // setup tracing
     setup_trace();
 
@@ -202,9 +218,12 @@ static void send_message()
  */
 static void receive_message()
 {
+		
+	
     uint8_t port;
     int flags;
     int16_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
+		char string[30] = "";
 
     if (retcode < 0) {
         printf("\r\n receive() - Error code %d \r\n", retcode);
@@ -214,8 +233,30 @@ static void receive_message()
     printf(" RX Data on port %u (%d bytes): ", port, retcode);
     for (uint8_t i = 0; i < retcode; i++) {
         printf("%02x ", rx_buffer[i]);
+				string[i] = rx_buffer[i];
+			  
     }
     printf("\r\n");
+		
+		printf(" %s \n", string);
+		
+		if(strcmp (string, "Red") == 0) {
+			Red = 1;
+			Green = 0;
+		}
+		
+		else if(strcmp (string, "Green") == 0 ){
+			Red = 0;
+			Green = 1;
+		}
+			
+		else if(strcmp (string, "OFF") == 0) {
+			Red = 0;
+			Green = 0;
+		
+		}
+		
+		
     
     memset(rx_buffer, 0, sizeof(rx_buffer));
 }
