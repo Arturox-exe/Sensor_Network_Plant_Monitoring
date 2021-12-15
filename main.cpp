@@ -25,6 +25,9 @@
 #include "trace_helper.h"
 #include "lora_radio_helper.h"
 
+//sensor includes
+#include "MBed_Adafruit_GPS.h"
+
 using namespace events;
 
 // Max payload size can be LORAMAC_PHY_MAXPAYLOAD.
@@ -51,14 +54,9 @@ uint8_t rx_buffer[30];
 #define CONFIRMED_MSG_RETRY_COUNTER     3
 
 /**
- * Dummy pin for dummy sensor
+ * Sensor Variables declaration
  */
-#define PC_9                            0
-
-/**
- * Dummy sensor class object
- */
-DS1820  ds1820(PC_9);
+Adafruit_GPS myGPS(new BufferedSerial(PA_9, PA_10,115200)); //object of Adafruit's GPS class
 
 /**
 * This event queue is the global event queue for both the
@@ -86,7 +84,8 @@ static LoRaWANInterface lorawan(radio);
  * Application specific callbacks
  */
 static lorawan_app_callbacks_t callbacks;
-static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+//static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
 static uint8_t APP_EUI[] = { 0x70, 0xb3, 0xd5, 0x7e, 0xd0, 0x00, 0xfc, 0xda };
 static uint8_t APP_KEY[] = { 0xf3,0x1c,0x2e,0x8b,0xc6,0x71,0x28,0x1d,0x51,0x16,0xf0,0x8f,0xf0,0xb7,0x92,0x8f };
 /**
@@ -105,6 +104,21 @@ int main(void)
         printf("\r\n LoRa initialization failed! \r\n");
         return -1;
     }
+		//Initialize sensors
+		Timer refresh_Timer; //sets up a timer for use in loop; how often do we print GPS info?
+    const int refresh_Time = 2000; //refresh time in ms
+
+    myGPS.begin(115200);  //sets baud rate for GPS communication; note this may be changed via Adafruit_GPS::sendCommand(char *)
+                        //a list of GPS commands is available at http://www.adafruit.com/datasheets/PMTK_A08.pdf
+
+    myGPS.sendCommand(PMTK_SET_NMEA_OUTPUT_GGA); //these commands are defined in MBed_Adafruit_GPS.h; a link is provided there for command creation
+    myGPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
+    myGPS.sendCommand(PGCMD_ANTENNA);
+
+    printf("Connection established at 115200 baud...\r\n");
+	
+    refresh_Timer.start();  //starts the clock on the timer
+
 
     printf("\r\n Mbed LoRaWANStack initialized \r\n");
 
@@ -137,7 +151,7 @@ int main(void)
     connect_params.connection_u.otaa.nb_trials = 3;
 		
     retcode = lorawan.connect(connect_params);
-
+		
     if (retcode == LORAWAN_STATUS_OK ||
             retcode == LORAWAN_STATUS_CONNECT_IN_PROGRESS) {
     } else {
@@ -160,21 +174,31 @@ static void send_message()
 {
     uint16_t packet_len;
     int16_t retcode;
-    int32_t sensor_value;
+    double latitude;
+		double longitude;
+	  
+		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
+			
+		 c = myGPS.read();   //queries the GPS
+		 //check if we recieved a new message from GPS, if so, attempt to parse it,
+        if ( myGPS.newNMEAreceived() ) {
+            if ( !myGPS.parse(myGPS.lastNMEA()) ) {
+                //do nothing
+            }
+        }
 
-    if (ds1820.begin()) {
-        ds1820.startConversion();
-        sensor_value = ds1820.read();
-        printf("\r\n Dummy Sensor Value = %d \r\n", sensor_value);
-        ds1820.startConversion();
-    } else {
-        printf("\r\n No sensor found \r\n");
-        return;
-    }
 
-    packet_len = sprintf((char *) tx_buffer, "%d",
-                         sensor_value);
-
+				if ((int)myGPS.fixquality > 0) {
+							latitude = myGPS.latitude;
+							longitude = myGPS.latitude;
+            }else{
+							latitude = 40.38952831294019;
+							longitude =  -3.6289202549381536;
+						}
+			
+    packet_len = sprintf((char *) tx_buffer, "%lf%lf",
+                         latitude,longitude);
+		printf("Lat: %lf, Long: %lf \n",latitude,longitude);
     retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
                            MSG_UNCONFIRMED_FLAG);
 		//retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
