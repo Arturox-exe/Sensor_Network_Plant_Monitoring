@@ -174,8 +174,8 @@ static void send_message()
 {
     uint16_t packet_len;
     int16_t retcode;
-    double latitude;
-		double longitude;
+    float latitude;
+		float longitude;
 	  
 		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
 			
@@ -192,11 +192,11 @@ static void send_message()
 							latitude = myGPS.latitude;
 							longitude = myGPS.latitude;
             }else{
-							latitude = 40.38952831294019;
-							longitude =  -3.6289202549381536;
+							latitude = (float)40.38952831294019;
+							longitude = (float) -3.6289202549381536;
 						}
 			
-    packet_len = sprintf((char *) tx_buffer, "%lf%lf",
+    packet_len = sprintf((char *) tx_buffer, "%f%f",
                          latitude,longitude);
 		printf("Lat: %lf, Long: %lf \n",latitude,longitude);
     retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
