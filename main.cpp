@@ -57,6 +57,12 @@ uint8_t rx_buffer[30];
  * Sensor Variables declaration
  */
 Adafruit_GPS myGPS(new BufferedSerial(PA_9, PA_10,115200)); //object of Adafruit's GPS class
+extern uint32_t _rhData;
+extern int32_t  _tData;
+
+// Sensor Functions
+extern void readSensor(void);
+extern bool RTHpresent();
 
 /**
 * This event queue is the global event queue for both the
@@ -176,6 +182,10 @@ static void send_message()
     int16_t retcode;
     float latitude;
 		float longitude;
+		float temperature = ((float)_tData)/1000;
+		if(RTHpresent()){
+					readSensor();
+			}
 	  
 		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
 			
@@ -196,9 +206,9 @@ static void send_message()
 							longitude = (float) -3.6289202549381536;
 						}
 			
-    packet_len = sprintf((char *) tx_buffer, "%f%f",
-                         latitude,longitude);
-		printf("Lat: %lf, Long: %lf \n",latitude,longitude);
+    packet_len = sprintf((char *) tx_buffer, "%f%f%.1f",
+                         latitude,longitude,temperature);
+		printf("Lat: %f, Long: %f , Temp: %.1f \n",latitude,longitude,temperature);
     retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
                            MSG_UNCONFIRMED_FLAG);
 		//retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,

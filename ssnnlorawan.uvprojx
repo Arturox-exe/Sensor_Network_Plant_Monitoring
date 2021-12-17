@@ -11315,6 +11315,16 @@
             </File>
           </Files>
         </Group>
+        <Group>
+          <GroupName>rth</GroupName>
+          <Files>
+            <File>
+              <FileName>rthsensor.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>.\rthsensor.cpp</FilePath>
+            </File>
+          </Files>
+        </Group>
       </Groups>
     </Target>
   </Targets>
