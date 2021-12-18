@@ -29,7 +29,11 @@
 #include "lora_radio_helper.h"
 
 //sensor includes
+#include "mbed.h"
+#include "MMA8451Q.h"
+#include "TCS3472_I2C/TCS3472_I2C.h"
 #include "MBed_Adafruit_GPS.h"
+
 
 using namespace events;
 
@@ -62,6 +66,15 @@ uint8_t rx_buffer[30];
 Adafruit_GPS myGPS(new BufferedSerial(PA_9, PA_10,115200)); //object of Adafruit's GPS class
 extern uint32_t _rhData;
 extern int32_t  _tData;
+int rgb_readings[4]; // Declare a 4 element array to store RGB sensor readings
+float result[3] = {0,0,0};
+
+bool calculate;
+bool I2CFinish;
+
+Thread I2CThread(osPriorityNormal, 1024);
+
+
 
 // Sensor Functions
 extern void readSensor(void);
@@ -112,9 +125,63 @@ DigitalOut Green(PH_1);
 AnalogIn light(PA_4);
 AnalogIn moisture(PA_0);
 
+char CalculateDominantColour(void){
+			char DomColor;
+									if(rgb_readings[1]<100 && rgb_readings[2]<100 && rgb_readings[3]<100) //If clear
+										{
+											DomColor = 'C';
+										}
+										else
+											{
+											if(rgb_readings[1]>rgb_readings[2] && rgb_readings[1]>=rgb_readings[3]) //If max=RED
+												{
+													DomColor = 'R';
+												}else if(rgb_readings[2]>rgb_readings[1] && rgb_readings[2]>rgb_readings[3]) //If max=Green
+												{
+													DomColor = 'G';
+												}
+												else if(rgb_readings[3]>rgb_readings[1] && rgb_readings[3]>rgb_readings[2])   //If max=Blue
+														DomColor = 'B';						
+												}
+											
+			return DomColor;
+											}
+								
+/******Thread calculating the I2C part *******/
+void I2CRead(void){
+	TCS3472_I2C rgb_sensor (PB_9, PB_8);
+	MMA8451Q acc(PB_9,PB_8,0x1c<<1);
+
+
+	int present;
+	while(true){
+		//read of temperature and humidity first
+		if(calculate){
+			if(RTHpresent()){
+					readSensor();
+					//RTHerror = false;
+			}
+			present = acc.getWhoAmI();
+			if(present == 0x1A){
+				acc.getAccAllAxis(result);
+			}
+				rgb_sensor.enablePowerAndRGBC();
+				rgb_sensor.getAllColors(rgb_readings);
+
+			I2CFinish = true;
+		}
+		  
+	}
+}
 
 int main(void)
 {
+	
+	  I2CFinish = false;
+		calculate = false;
+		I2CThread.start(I2CRead);
+	
+
 		Red = 0;
 		Green = 0;
     // setup tracing
@@ -200,20 +267,30 @@ static void send_message()
     int16_t retcode;
     float latitude;
 		float longitude;
-		float temperature = ((float)_tData)/1000;
-	  float light_value = light.read_u16()*100.00/65536.00;
-		float moisture_value = moisture.read_u16()*100.00/65536.00;
-		if(RTHpresent()){
-					readSensor();
-			}
+		int16_t temperature;
+		uint16_t humidity;
+		char domColor;
+	  uint16_t light_value = light.read_u16()*10000.00/65536.00;
+		uint16_t moisture_value = moisture.read_u16()*10000.00/65536.00;
 		
+		uint8_t* pointer = tx_buffer;
+		calculate = true;
+		int i;
+		while(!I2CFinish){
+			printf(" ");
+			};
+		calculate = false;
+		I2CFinish = false;
+		temperature = _tData/10;
+		humidity = _rhData/10;
+		domColor = CalculateDominantColour();
 	  
 		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
 			
 		 c = myGPS.read();   //queries the GPS
 		 //check if we recieved a new message from GPS, if so, attempt to parse it,
         if ( myGPS.newNMEAreceived() ) {
-            if ( !myGPS.parse(myGPS.lastNMEA()) ) {
+            if ( !myGPS.parse(myGPS.lastNMEA())) {
                 //do nothing
             }
         }
@@ -226,10 +303,35 @@ static void send_message()
 							latitude = (float)40.38952831294019;
 							longitude = (float) -3.6289202549381536;
 						}
-			
-    packet_len = sprintf((char *) tx_buffer, "%f%f%04.1f%04.1f%04.1f",
-                         latitude,longitude,temperature,light_value, moisture_value);
-		printf("Lat: %f, Long: %f , Temp: %04.1f, Ligth: %04.1f, Moiture: %04.1f \n",latitude,longitude,temperature, light_value, moisture_value);
+		
+		memcpy(pointer,&latitude, 4);
+		pointer += 4;
+		memcpy(pointer,&longitude,4);
+		pointer += 4;
+		memcpy(pointer,&temperature,2);
+		pointer += 2;
+		memcpy(pointer,&humidity,2);
+		pointer += 2;
+		memcpy(pointer,&light_value,2);
+		pointer += 2;
+		memcpy(pointer,&moisture_value,sizeof(moisture_value));
+		pointer += 2;
+		memcpy(pointer,&domColor,sizeof(domColor));
+		pointer += sizeof(domColor);
+		memcpy(pointer,&result[0],sizeof(result[0]));
+		pointer += sizeof(result[0]);
+		memcpy(pointer,&result[1],sizeof(result[1]));
+		pointer += sizeof(result[1]);
+		memcpy(pointer,&result[2],sizeof(result[2]));
+		pointer += sizeof(result[2]);
+		
+		
+    packet_len = sizeof(tx_buffer);
+		for (i= 0; i<packet_len;i++)
+		printf("%hhx",tx_buffer[i]);
+		
+		printf("\nTemp: %d, Hum: %d, Light: %d, Mois: %d, domColor: %c, XYZ:%.02f,%.02f,%.02f",
+					temperature,humidity,light_value,moisture_value,domColor,result[0],result[1],result[2]);
     retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
                            MSG_UNCONFIRMED_FLAG);
 		//retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
