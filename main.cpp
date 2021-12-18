@@ -90,13 +90,17 @@ static LoRaWANInterface lorawan(radio);
  * Application specific callbacks
  */
 static lorawan_app_callbacks_t callbacks;
-//static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
-static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+//static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
 static uint8_t APP_EUI[] = { 0x70, 0xb3, 0xd5, 0x7e, 0xd0, 0x00, 0xfc, 0xda };
 static uint8_t APP_KEY[] = { 0xf3,0x1c,0x2e,0x8b,0xc6,0x71,0x28,0x1d,0x51,0x16,0xf0,0x8f,0xf0,0xb7,0x92,0x8f };
 /**
  * Entry point for application
  */
+
+AnalogIn light(PA_4);
+AnalogIn moisture(PA_0);
+
 int main(void)
 {
     // setup tracing
@@ -183,9 +187,12 @@ static void send_message()
     float latitude;
 		float longitude;
 		float temperature = ((float)_tData)/1000;
+	  float light_value = light.read_u16()*100.00/65536.00;
+		float moisture_value = moisture.read_u16()*100.00/65536.00;
 		if(RTHpresent()){
 					readSensor();
 			}
+		
 	  
 		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
 			
@@ -206,9 +213,9 @@ static void send_message()
 							longitude = (float) -3.6289202549381536;
 						}
 			
-    packet_len = sprintf((char *) tx_buffer, "%f%f%.1f",
-                         latitude,longitude,temperature);
-		printf("Lat: %f, Long: %f , Temp: %.1f \n",latitude,longitude,temperature);
+    packet_len = sprintf((char *) tx_buffer, "%f%f%04.1f%04.1f%04.1f",
+                         latitude,longitude,temperature,light_value, moisture_value);
+		printf("Lat: %f, Long: %f , Temp: %04.1f, Ligth: %04.1f, Moiture: %04.1f \n",latitude,longitude,temperature, light_value, moisture_value);
     retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
                            MSG_UNCONFIRMED_FLAG);
 		//retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
