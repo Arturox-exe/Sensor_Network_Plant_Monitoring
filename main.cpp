@@ -63,7 +63,7 @@ uint8_t rx_buffer[30];
 /**
  * Sensor Variables declaration
  */
-Adafruit_GPS myGPS(new BufferedSerial(PA_9, PA_10,115200)); //object of Adafruit's GPS class
+Adafruit_GPS myGPS(new BufferedSerial(PA_9, PA_10,9600)); //object of Adafruit's GPS class
 extern uint32_t _rhData;
 extern int32_t  _tData;
 int rgb_readings[4]; // Declare a 4 element array to store RGB sensor readings
@@ -73,7 +73,9 @@ bool calculate;
 bool I2CFinish;
 
 Thread I2CThread(osPriorityNormal, 1024);
+Thread GPSThread(osPriorityNormal, 1024);
 
+bool GPSready;
 
 
 // Sensor Functions
@@ -106,8 +108,8 @@ static LoRaWANInterface lorawan(radio);
  * Application specific callbacks
  */
 static lorawan_app_callbacks_t callbacks;
-static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
-//static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+//static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
 static uint8_t APP_EUI[] = { 0x70, 0xb3, 0xd5, 0x7e, 0xd0, 0x00, 0xfc, 0xda };
 static uint8_t APP_KEY[] = { 0xf3,0x1c,0x2e,0x8b,0xc6,0x71,0x28,0x1d,0x51,0x16,0xf0,0x8f,0xf0,0xb7,0x92,0x8f };
 /**
@@ -146,8 +148,42 @@ char CalculateDominantColour(void){
 											
 			return DomColor;
 											}
-								
-/******Thread calculating the I2C part *******/
+void GPSread(void){
+			myGPS.begin(9600);  //sets baud rate for GPS communication; note this may be changed via Adafruit_GPS::sendCommand(char *)
+                        //a list of GPS commands is available at http://www.adafruit.com/datasheets/PMTK_A08.pdf
+
+    myGPS.sendCommand(PMTK_SET_NMEA_OUTPUT_GGA); //these commands are defined in MBed_Adafruit_GPS.h; a link is provided there for command creation
+    myGPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
+    myGPS.sendCommand(PGCMD_ANTENNA);
+		Timer refresh_Timer; //sets up a timer for use in loop; how often do we print GPS info?
+    const int refresh_Time = 2000; //refresh time in ms
+		GPSready = false;
+		refresh_Timer.start();  //starts the clock on the timer
+	
+		printf("Connection established at 9600 baud...\r\n");
+		char c;
+	
+		while(true){
+
+			 c = myGPS.read();   //queries the GPS
+		 //check if we recieved a new message from GPS, if so, attempt to parse it,
+        if ( myGPS.newNMEAreceived() ) {
+
+            if ( !myGPS.parse(myGPS.lastNMEA())) {
+
+                continue;
+							
+            }
+        }
+				
+				if (std::chrono::duration_cast<std::chrono::milliseconds>(refresh_Timer.elapsed_time()).count() >= refresh_Time) {
+            refresh_Timer.reset();
+						GPSready= true;
+				}
+			}
+	
+}
+/******Function calculating the I2C part *******/
 void I2CRead(void){
 	TCS3472_I2C rgb_sensor (PB_9, PB_8);
 	MMA8451Q acc(PB_9,PB_8,0x1c<<1);
@@ -176,14 +212,15 @@ void I2CRead(void){
 
 int main(void)
 {
-	
+
 	  I2CFinish = false;
 		calculate = false;
 		I2CThread.start(I2CRead);
+		GPSThread.start(GPSread);
 	
 
-		Red = 0;
-		Green = 0;
+		Red = 1;
+		Green = 1;
     // setup tracing
     setup_trace();
 
@@ -195,21 +232,10 @@ int main(void)
         printf("\r\n LoRa initialization failed! \r\n");
         return -1;
     }
-		//Initialize sensors
-		Timer refresh_Timer; //sets up a timer for use in loop; how often do we print GPS info?
-    const int refresh_Time = 2000; //refresh time in ms
 
-    myGPS.begin(115200);  //sets baud rate for GPS communication; note this may be changed via Adafruit_GPS::sendCommand(char *)
-                        //a list of GPS commands is available at http://www.adafruit.com/datasheets/PMTK_A08.pdf
 
-    myGPS.sendCommand(PMTK_SET_NMEA_OUTPUT_GGA); //these commands are defined in MBed_Adafruit_GPS.h; a link is provided there for command creation
-    myGPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
-    myGPS.sendCommand(PGCMD_ANTENNA);
 
-    printf("Connection established at 115200 baud...\r\n");
 	
-    refresh_Timer.start();  //starts the clock on the timer
-
 
     printf("\r\n Mbed LoRaWANStack initialized \r\n");
 
@@ -254,6 +280,7 @@ int main(void)
 
     // make your event queue dispatching events forever
     ev_queue.dispatch_forever();
+		
 
     return 0;
 }
@@ -286,36 +313,30 @@ static void send_message()
 		domColor = CalculateDominantColour();
 	  
 		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
-			
-		 c = myGPS.read();   //queries the GPS
-		 //check if we recieved a new message from GPS, if so, attempt to parse it,
-        if ( myGPS.newNMEAreceived() ) {
-            if ( !myGPS.parse(myGPS.lastNMEA())) {
-                //do nothing
-            }
-        }
 
-
-				if ((int)myGPS.fixquality > 0) {
+				if ((int)myGPS.fixquality > 0 && GPSready) {
 							latitude = myGPS.latitude;
 							longitude = myGPS.latitude;
             }else{
 							latitude = (float)40.38952831294019;
 							longitude = (float) -3.6289202549381536;
 						}
+						printf("\nDate/Hour: %d-%d-%d %d:%d:%d",myGPS.day,myGPS.month,myGPS.year,myGPS.hour,myGPS.minute,myGPS.seconds);
+						printf("\nSatellites %d\n",myGPS.satellites);
+					
 		
-		memcpy(pointer,&latitude, 4);
-		pointer += 4;
-		memcpy(pointer,&longitude,4);
-		pointer += 4;
-		memcpy(pointer,&temperature,2);
-		pointer += 2;
-		memcpy(pointer,&humidity,2);
-		pointer += 2;
-		memcpy(pointer,&light_value,2);
-		pointer += 2;
+		memcpy(pointer,&latitude, sizeof(latitude));
+		pointer += sizeof(latitude);
+		memcpy(pointer,&longitude,sizeof(longitude));
+		pointer += sizeof(longitude);
+		memcpy(pointer,&temperature,sizeof(temperature));
+		pointer += sizeof(temperature);
+		memcpy(pointer,&humidity,sizeof(humidity));
+		pointer += sizeof(humidity);
+		memcpy(pointer,&light_value,sizeof(light_value));
+		pointer += sizeof(light_value);
 		memcpy(pointer,&moisture_value,sizeof(moisture_value));
-		pointer += 2;
+		pointer += sizeof(moisture_value);
 		memcpy(pointer,&domColor,sizeof(domColor));
 		pointer += sizeof(domColor);
 		memcpy(pointer,&result[0],sizeof(result[0]));
@@ -326,12 +347,12 @@ static void send_message()
 		pointer += sizeof(result[2]);
 		
 		
-    packet_len = sizeof(tx_buffer);
-		for (i= 0; i<packet_len;i++)
-		printf("%hhx",tx_buffer[i]);
+    packet_len = 29;
 		
-		printf("\nTemp: %d, Hum: %d, Light: %d, Mois: %d, domColor: %c, XYZ:%.02f,%.02f,%.02f",
-					temperature,humidity,light_value,moisture_value,domColor,result[0],result[1],result[2]);
+		printf("\nLat: %f Long: %f\nTemp: %.02f oC, Hum: %.02f %RH, Light: %.02f %, Mois: %.02f %, domColor: %c, XYZ:%.02f,%.02f,%.02f",
+					latitude,longitude,
+					(float)temperature/100,(float)humidity/100,
+						(float)light_value/100,(float)moisture_value/100,domColor,result[0],result[1],result[2]);
     retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
                            MSG_UNCONFIRMED_FLAG);
 		//retcode = lorawan.send(MBED_CONF_LORA_APP_PORT, tx_buffer, packet_len,
@@ -382,18 +403,18 @@ static void receive_message()
 		printf(" %s \n", string);
 		
 		if(strcmp (string, "Red") == 0) {
-			Red = 1;
-			Green = 0;
-		}
-		
-		else if(strcmp (string, "Green") == 0 ){
 			Red = 0;
 			Green = 1;
 		}
+		
+		else if(strcmp (string, "Green") == 0 ){
+			Red = 1;
+			Green = 0;
+		}
 			
 		else if(strcmp (string, "OFF") == 0) {
-			Red = 0;
-			Green = 0;
+			Red = 1;
+			Green = 1;
 		
 		}
 		
