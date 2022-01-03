@@ -108,8 +108,8 @@ static LoRaWANInterface lorawan(radio);
  * Application specific callbacks
  */
 static lorawan_app_callbacks_t callbacks;
-//static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
-static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+static uint8_t DEV_EUI[] = { 0x7d, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
+//static uint8_t DEV_EUI[] = { 0x7F, 0x39, 0x32, 0x35, 0x59, 0x37, 0x91, 0x94};
 static uint8_t APP_EUI[] = { 0x70, 0xb3, 0xd5, 0x7e, 0xd0, 0x00, 0xfc, 0xda };
 static uint8_t APP_KEY[] = { 0xf3,0x1c,0x2e,0x8b,0xc6,0x71,0x28,0x1d,0x51,0x16,0xf0,0x8f,0xf0,0xb7,0x92,0x8f };
 /**
@@ -219,8 +219,8 @@ int main(void)
 		GPSThread.start(GPSread);
 	
 
-		Red = 1;
-		Green = 1;
+		Red = 0;
+		Green = 0;
     // setup tracing
     setup_trace();
 
@@ -315,13 +315,13 @@ static void send_message()
 		char c; //when read via Adafruit_GPS::read(), the class returns single character stored here
 
 				if ((int)myGPS.fixquality > 0 && GPSready) {
-							latitude = myGPS.latitude;
-							longitude = myGPS.latitude;
-            }else{
+							latitude = (float) myGPS.latitude / 100;
+							longitude = (float) myGPS.longitude / 100;
+            }else{	
 							latitude = (float)40.38952831294019;
 							longitude = (float) -3.6289202549381536;
 						}
-						printf("\nDate/Hour: %d-%d-%d %d:%d:%d",myGPS.day,myGPS.month,myGPS.year,myGPS.hour,myGPS.minute,myGPS.seconds);
+						printf("\nDate/Hour: %d-%d-%d %d:%d:%d",myGPS.day,myGPS.month,myGPS.year,myGPS.hour +1 ,myGPS.minute,myGPS.seconds);
 						printf("\nSatellites %d\n",myGPS.satellites);
 					
 		
@@ -403,18 +403,18 @@ static void receive_message()
 		printf(" %s \n", string);
 		
 		if(strcmp (string, "Red") == 0) {
-			Red = 0;
-			Green = 1;
-		}
-		
-		else if(strcmp (string, "Green") == 0 ){
 			Red = 1;
 			Green = 0;
 		}
+		
+		else if(strcmp (string, "Green") == 0 ){
+			Red = 0;
+			Green = 1;
+		}
 			
 		else if(strcmp (string, "OFF") == 0) {
-			Red = 1;
-			Green = 1;
+			Red = 0;
+			Green = 0;
 		
 		}
 		
